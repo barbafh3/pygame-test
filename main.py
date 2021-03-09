@@ -1,204 +1,149 @@
+from engine.math import Collision, Direction, Vector2
+from engine.constants import BASE_JUMP_COUNT, DIRT_COLOR, GRASS_COLOR, PLAYER_COLOR, WINDOW, ASSETS_FOLDER
 import pygame
-import sys
-import random
+import engine.text
+import engine.events
+import engine.tilemap
+import engine.debug
 from pygame.locals import *
-import colors
 
+# --- DISCLAIMERS ---
+#
+# -> Fonts used were made by the youtuber DaFluffyPotato, i just added missing character on the big font
+#    such as (, ), / and \.
 
-class Vector2:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-
-class CircleParticle:
-    def __init__(self, position, velocity, timer, color):
-        self.position = position
-        self.velocity = velocity
-        self.timer = timer
-        self.color = color
-
-
-class Direction:
-    def __init__(self, left, right, up, down):
-        self.left = left
-        self.right = right
-        self.up = up
-        self.down = down
-
-
-direction = Direction(False, False, False, False)
-clicked = False
-
-mainClock = pygame.time.Clock()
+clock = pygame.time.Clock()
 pygame.init()
-pygame.display.set_caption("Example")
-
-WINDOW = (500, 500)
-
+pygame.display.set_caption("Tilemap test")
 screen = pygame.display.set_mode(WINDOW, 0, 32)
+display = pygame.Surface(WINDOW)
+drawing_surf = pygame.Surface(WINDOW)
+my_font = engine.text.Font(ASSETS_FOLDER + 'small_font.png')
+my_big_font = engine.text.Font(ASSETS_FOLDER + 'large_font.png')
 
-# [loc, velocity, timer, type]
-particles = []
+debugger = engine.debug.DataPanel(my_big_font)
+debug_panel_enabled = False
 
-water_colors = [
-    # (245, 255, 255),
-    # pygame.Color(200, 255, 255, 128),
-    pygame.Color(135, 255, 255, 200),
-    pygame.Color(0, 210, 255, 255),
-    pygame.Color(0, 125, 168, 255)
-]
+player = pygame.Rect(30, 30, 20, 40)
+direction = Direction(False, False, False, False)
+player_collision = Collision(False, False, False, False)
+jump_count = BASE_JUMP_COUNT
+vertical_speed = 0
 
-smoke_colors = [
-    # (140, 140, 140),
-    pygame.Color(180, 180, 180, 255),
-    pygame.Color(240, 240, 240, 128),
-]
+tile_types = {'1': DIRT_COLOR, '2': GRASS_COLOR}
 
-
-def circle_surf(radius, color):
-    surface = pygame.Surface((radius * 2, radius * 2))
-    pygame.draw.circle(surface, color, (radius, radius), radius)
-    surface.set_colorkey((0, 0, 0))
-    return surface
-
-
-def draw_water_particles(surface, mx, my):
-    global particles
-
-    for particle in particles:
-        particle.position.x += particle.velocity.x
-        particle.position.y += particle.velocity.y
-        particle.velocity.y += random.randint(0, 2) / 10
-        pygame.draw.circle(screen, particle.color, [int(
-            particle.position.x), int(particle.position.y)], int(particle.timer))
-
-        # radius = particle.timer * 2
-        # surface = circle_surf(radius, (60, 60, 60))
-        # screen.blit(surface, (int(particle.position.x - radius), int(particle.position.y - radius)), special_flags=BLEND_RGB_ADD)
-
-        if particle.timer <= 0:
-            particles.remove(particles[0])
-
-
-def draw_smoke(mx, my):
-    random_color = random.randint(0, 1)
-    particle = CircleParticle(Vector2(mx, my), Vector2(
-        random.uniform(-1, 1), random.uniform(0, -1)), random.uniform(4, 6), smoke_colors[random_color])
-    particles.append(particle)
-
-    for particle in particles:
-        particle.position.x += particle.velocity.x
-        particle.position.y += particle.velocity.y
-        particle.timer -= 0.1
-        if particle.timer == 0:
-            particle.timer = -1
-        particle.radius += 0.1
-        if particle.color.a - 60 <= 0:
-            particle.color.a = 0
-        else:
-            particle.color.a -= 1
-
-        pygame.draw.circle(screen, particle.color, [int(particle.position.x), int(
-            particle.position.y)], int(particle.radius), int(particle.timer))
-
-        if particle.timer <= 0:
-            particles.remove(particle)
-
-
-player = pygame.Rect(100, 100, 50, 80)
-tiles = [(pygame.Rect(200, 350, 50, 50), (0, 255, 0)),
-         (pygame.Rect(260, 320, 50, 50), (255, 0, 0))]
+tilemap = engine.tilemap.ShapeTilemap(ASSETS_FOLDER + "map.txt", tile_types)
 
 
 def collision_test(rect, tiles):
     collisions = []
-    for tile, color in tiles:
+    for tile in tiles:
         if rect.colliderect(tile):
             collisions.append(tile)
     return collisions
 
 
-def move(rect, movement, tiles):  # movement = [5,2]
+def move(rect, movement, tiles, collisions):
     rect.x += movement.x
-    collisions = collision_test(rect, tiles)
-    for tile in collisions:
+    collision = collision_test(rect, tiles)
+    for tile in collision:
         if movement.x > 0:
             rect.right = tile.left
+            collisions.right = True
         if movement.x < 0:
             rect.left = tile.right
+            collisions.left = True
     rect.y += movement.y
-    collisions = collision_test(rect, tiles)
-    for tile in collisions:
+    collision = collision_test(rect, tiles)
+    for tile in collision:
         if movement.y > 0:
             rect.bottom = tile.top
+            movement.y = 0
+            collisions.bottom = True
         if movement.y < 0:
             rect.top = tile.bottom
-    return rect
+            collisions.top = True
+        # return rect
 
 
-def event_handler():
-    global direction
-    global screen
-    global particles
-    global water_colors
-    for event in pygame.event.get():
-        if event.type == QUIT:
-            pygame.quit()
-            sys.exit()
-        if event.type == pygame.MOUSEBUTTONUP:
-            mx, my = pygame.mouse.get_pos()
-            for i in range(15):
-                particles.append(CircleParticle(Vector2(mx, my), Vector2(random.randint(
-                    0, 20) / 10 - 1, -2), random.uniform(4, 6), water_colors[random.randint(0, 2)]))
-        if event.type == KEYDOWN:
-            if event.key == K_ESCAPE:
-                pygame.quit()
-                sys.exit()
-            if event.key == K_UP or event.key == K_w:
-                direction.up = True
-            if event.key == K_DOWN or event.key == K_s:
-                direction.down = True
-            if event.key == K_LEFT or event.key == K_a:
-                direction.left = True
-            if event.key == K_RIGHT or event.key == K_d:
-                direction.right = True
-        if event.type == KEYUP:
-            if event.key == K_UP or event.key == K_w:
-                direction.up = False
-            if event.key == K_DOWN or event.key == K_s:
-                direction.down = False
-            if event.key == K_LEFT or event.key == K_a:
-                direction.left = False
-            if event.key == K_RIGHT or event.key == K_d:
-                direction.right = False
+def function_time(func) -> str:
+    before = pygame.time.get_ticks()
+    func()
+    after = pygame.time.get_ticks()
+    elapsed = after - before
+    return str(elapsed)
 
+
+vertical = 0
+air = 0
+
+last_time = pygame.time.get_ticks()
 
 while True:
-    screen.fill((0, 0, 0))
-    mx, my = pygame.mouse.get_pos()
+    drawing_surf.fill((25, 175, 200))
 
+    delta = (pygame.time.get_ticks() - last_time) * 60 / 1000
+    last_time = pygame.time.get_ticks()
+
+    player_collision = Collision(False, False, False, False)
     movement = Vector2(0, 0)
+    grounded = ""
 
-    if direction.right == True:
-        movement.x += 5
-    if direction.left == True:
-        movement.x -= 5
-    if direction.up == True:
-        movement.y -= 5
-    if direction.down == True:
-        movement.y += 5
+    if direction.right is True:
+        movement.x += 3 * delta
+    if direction.left is True:
+        movement.x -= 3 * delta
+    if direction.up is True and jump_count > 0:
+        if air < 6:
+            vertical = -9
+            jump_count -= 1
 
-    player = move(player, movement, tiles)
+    movement.y += vertical
+    if movement.y < -3:
+        vertical += 0.4 * delta
+    if movement.y > -3 and movement.y <= 2:
+        vertical += 0.3 * delta
+    if movement.y > 2:
+        vertical += 0.8 * delta
+    if vertical > 8:
+        vertical = 8
 
-    pygame.draw.rect(screen, colors.white, player)
+    debug_panel_enabled = engine.events.handle_events(
+        direction, debug_panel_enabled)
 
-    for tile, color in tiles:
-        pygame.draw.rect(screen, color, tile)
+    move_time = function_time(lambda: move(
+        player, movement, tilemap.tile_list, player_collision))
 
-    draw_water_particles(screen, mx, my)
+    if player_collision.bottom is True:
+        jump_count = BASE_JUMP_COUNT
+        vertical = 0
+        air = 0
+        grounded = "Grounded"
+    else:
+        air += 1
+        grounded = "Not grounded"
+    if player_collision.top is True:
+        vertical = 0
 
-    event_handler()
+    tilemap_time = function_time(
+        lambda: tilemap.draw_tilemap(drawing_surf))
+    pygame.draw.rect(drawing_surf, PLAYER_COLOR, player)
 
+    if debug_panel_enabled is True:
+        fps = ("fps", "FPS: " + str(int(clock.get_fps())))
+        move_drawtime = (
+            "move_drawtime", "Drawing time for 'move()': " + move_time + "ms")
+        tilemap_drawtime = (
+            "tilemap_drawimte", "Drawing time for 'draw_tilemap()': " + tilemap_time + "ms")
+        current_position = ("player_position", "Current player position: x = " +
+                            str(player.x) + " - y = " + format(player.y, '.2f'))
+        current_velocity = ("player_velocity", "Current player velocity: x = " +
+                            str(movement.x) + " - y = " + format(movement.y, '.2f'))
+        debugger.add_content_to_list([fps, move_drawtime,
+                                      tilemap_drawtime, current_position, current_velocity])
+        debugger.draw_debug_panel(drawing_surf)
+
+    display.blit(drawing_surf, (0, 0))
+    screen.blit(display, (0, 0))
     pygame.display.update()
-    mainClock.tick(60)
+    clock.tick(60)
