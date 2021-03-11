@@ -35,7 +35,7 @@ def handle_events(direction, debug_panel_enabled):
     return debug_panel_enabled
 
 
-def handle_events():
+def handle_events_():
     for event in pygame.event.get():
         if event.type == QUIT:
             pygame.quit()
